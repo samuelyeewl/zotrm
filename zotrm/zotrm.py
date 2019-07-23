@@ -62,7 +62,7 @@ def main(verbose=False):
 
         # Get collection(s)
         collections = paper['data']['collections']
-        if len(collections) < 0:
+        if len(collections) < 1:
             # If not in a collection, use default dir
             hierarchy = [rm_default_dir]
         else:
