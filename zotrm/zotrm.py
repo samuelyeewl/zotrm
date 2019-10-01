@@ -54,7 +54,8 @@ def main(verbose=False):
                                         '[A-Z0-9]*/' + searchstr))
             foundfiles = list(filter(r.match, pdflist))
             if len(foundfiles) < 1:
-                raise FileNotFoundError(searchstr)
+                print("Could not find {:s}".format(searchstr))
+                continue
             foundfile = foundfiles[0]
         except:
             raise
