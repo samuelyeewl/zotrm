@@ -3,7 +3,7 @@ zotrm.py
 
 Send Zotero papers to ReMarkable tablet.
 
-@author Samuel Yee
+@authors Samuel Yee, @github/narroo
 """
 import os
 import configparser
@@ -13,59 +13,128 @@ import argparse
 import subprocess
 from pyzotero import zotero
 
-def main(verbose=False):
-    # Read configuration file
+def read_config():
+    '''
+    Read the configuration file and return a dictionary of parameters.
+    '''
     config = configparser.ConfigParser()
     config_file = os.path.expanduser('~/.zotrm/config.ini')
     if not os.path.exists(config_file):
         print("Configuration file not found, exiting.")
         return -1
     config.read(config_file)
-    zot_lib_id = config['Zotero']['LIBRARY_ID']
-    zot_api_key = config['Zotero']['API_KEY']
-    zot_storage_dir = os.path.expandvars(config['Zotero']['STORAGE_DIR'])
-    zot_send_tag = config['Zotero']['SEND_TAG']
-    zot_replace = 'REPLACE_TAG' in config['Zotero']
-    if zot_replace:
-        zot_replace_tag = config['Zotero']['REPLACE_TAG']
-    rmapi_path = os.path.expandvars(config['RMAPI']['RMAPI_PATH'])
-    rm_base_dir = config['Remarkable']['BASE_DIR']
-    rm_default_dir = config['Remarkable']['DEFAULT_DIR']
 
-    # Get list of pdfs
-    pdflist = glob.glob(os.path.join(zot_storage_dir, '*/*.pdf'))
+    d = {}
+    d['zot_lib_id'] = config['Zotero']['LIBRARY_ID']
+    d['zot_api_key'] = config['Zotero']['API_KEY']
+    d['zot_storage_dir'] = os.path.expandvars(config['Zotero']['STORAGE_DIR'])
+    d['zot_attachment_dir'] = os.path.expandvars(config['Zotero']['ATTACHMENT_DIR'])
+    d['zot_send_tag'] = config['Zotero']['SEND_TAG']
+    d['zot_replace'] = 'REPLACE_TAG' in config['Zotero']
+    if d['zot_replace']:
+        d['zot_replace_tag'] = config['Zotero']['REPLACE_TAG']
+    d['rmapi_path'] = os.path.expandvars(config['RMAPI']['RMAPI_PATH'])
+    d['rm_base_dir'] = config['Remarkable']['BASE_DIR']
+    d['rm_default_dir'] = config['Remarkable']['DEFAULT_DIR']
 
-    zot = zotero.Zotero(zot_lib_id, 'user', zot_api_key)
-    z = zot.top(tag=zot_send_tag)
+    return d
+
+def get_attachment(papers, zot, config):
+    '''
+    Get the PDF attachment for the given paper.
+
+    Args:
+    -----
+    paper : list of dict
+        Item to get attachment for
+    zot : pyzotero.zotero.Zotero
+        Zotero library.
+
+    Returns:
+    --------
+    list of filenames
+    '''
+
+    return attachments
+
+
+def main(verbose=False):
+    # Read configuration file
+    config = read_config()
+    rmapi_path = config['rmapi_path']
+    zot = zotero.Zotero(config['zot_lib_id'], 'user', config['zot_api_key'])
+
+    # Get list of papers with the appropriate tag
+    z = zot.top(tag=config['zot_send_tag'])
+
     if verbose:
         print("Found {:d} papers to send...".format(len(z)))
 
+    # Get list of files in Zotero storage dir
+    pdflist = glob.glob(os.path.join(config['zot_storage_dir'], '*/*.pdf'))
+    if pdflist == '':
+        print("No PDF files found.")
+        return
+
     for paper in z:
-        try:
-            # Search for relevant PDF
-            lastname = paper['data']['creators'][0]['lastName']
-            yr = paper['meta']['parsedDate'].split('-')[0]
-            full_title = paper['data']['title']
-            title = full_title[:20]
-            # Escape special characters
-            esc_title = re.escape(title)
-            searchstr = '{0:s}[_\s].*{1:s}_{2:s}'.format(lastname, yr, esc_title)
-            r = re.compile(os.path.join(zot_storage_dir,
-                                        '[A-Z0-9]*/' + searchstr))
-            foundfiles = list(filter(r.match, pdflist))
-            if len(foundfiles) < 1:
-                print("Could not find {:s}".format(searchstr))
+        if verbose:
+            print("Preparing paper {:s}".format(paper['data']['title']))
+
+        # Find PDF
+        attachments = []
+
+        # Recursively search for attachments
+        queue = [paper]
+        while queue:
+            item = queue.pop()
+            if item['data']['itemType'] != 'attachment':
+                queue += zot.children(item['key'])
                 continue
-            foundfile = foundfiles[0]
-        except:
-            raise
-        pdfname = os.path.basename(foundfile)
+            # Get filename
+            if 'filename' in item['data']:
+                filename = item['data']['filename']
+            elif 'path' in item['data']:
+                filename = item['data']['path']
+            else:
+                # No file found in this attachment
+                continue
+
+            # Make sure file is a PDF
+            if '.pdf' not in filename.casefold():
+                continue
+            # Join base file name
+            if filename.startswith('attachments:'):
+                # For linked attachments, we have the whole filename already.
+                filename = filename[12:]
+                if 'zot_attachment_dir' not in config:
+                    print("ERR: No attachment directory provided in config file.")
+                    continue
+                filename = os.path.join(config['zot_attachment_dir'], filename)
+                if os.path.exists(filename):
+                    attachments.append(filename)
+            else:
+                # Without linked attachments, PDF is in some subdirectory.
+                filename = os.path.join(config['zot_storage_dir'], '[A-Z0-9]*/' + filename)
+                r = re.compile(filename)
+                # Match files to list
+                foundfiles = list(filter(r.match, pdflist))
+                if len(foundfiles) < 1 :
+                    print("ERR: Cannot find file {:s}, skipping...".format(flename))
+                    continue
+                else:
+                    for f in foundfiles:
+                        if os.path.exists(f):
+                            attachments.append(f)
+
+        if verbose:
+            for f in attachments:
+                print("\tFound PDF attachment {:s}".format(os.path.basename(f)))
 
         # Get collection(s)
         collections = paper['data']['collections']
         if len(collections) < 1:
             # If not in a collection, use default dir
-            hierarchy = [rm_default_dir]
+            hierarchy = [config['rm_default_dir']]
         else:
             hierarchy = []
             coll = collections[0]
@@ -79,23 +148,13 @@ def main(verbose=False):
             hierarchy.reverse()
 
         if verbose:
-            print("Found PDF file {:s}".format(pdfname))
-
-        # Remove tag
-        paper['data']['tags'] = [tag for tag in paper['data']['tags']
-                                 if tag['tag'] != zot_send_tag]
-        if zot_replace:
-            paper['data']['tags'].append({'tag': zot_replace_tag})
-        # Update item
-        zot.update_item(paper)
-        if verbose:
-            print("Updated tags for {:s}".format(full_title))
+            print("\tPlacing attachments in folder {:s}".format('/'.join(hierarchy)))
 
         # Upload to remarkable
         dirstr = ""
         direxists = True
         try:
-            # Create folders
+            # Create folders recursively
             for folder in hierarchy:
                 dirstr += "/" + folder
                 if len(dirstr) < 2:
@@ -113,30 +172,40 @@ def main(verbose=False):
                         raise Exception("Could not create directory "
                                         + dirstr + " on remarkable.")
                     if verbose:
-                        print("Created directory " + dirstr
-                              + " on remarkable.")
+                        print("\tCreated directory {:s} on remarkable".format(dirstr))
 
             # Upload PDF
-            fileexists = not subprocess.call([rmapi_path, "find", dirstr + "/" +
-                                              os.path.splitext(pdfname)[0]],
-                                             stdout=subprocess.DEVNULL,
-                                             stderr=subprocess.DEVNULL)
-            if fileexists:
+            for attachment in attachments:
+                pdfname = os.path.basename(attachment)
+                fileexists = not subprocess.call([rmapi_path, "find", dirstr + "/" +
+                                                  os.path.splitext(pdfname)[0]],
+                                                 stdout=subprocess.DEVNULL,
+                                                 stderr=subprocess.DEVNULL)
+                if fileexists:
+                    if verbose:
+                        print("\tFile {:s} already exists, skipping...".format(pdfname))
+                    continue
+                status = subprocess.call([rmapi_path, "put", attachment, dirstr],
+                                         stdout=subprocess.DEVNULL)
+                if status != 0:
+                    raise Exception("\tCould not upload file " + pdfname +
+                                    " to remarkable.")
                 if verbose:
-                    print("File {:s} already exists, skipping...".format(pdfname))
-                continue
-            status = subprocess.call([rmapi_path, "put", foundfile, dirstr],
-                                     stdout=subprocess.DEVNULL)
-            if status != 0:
-                raise Exception("Could not upload file " + foundfile +
-                                " to remarkable.")
-            if verbose:
-                print("Uploaded " + pdfname + ".")
+                    print("\tUploaded {:s}.".format(pdfname))
 
         except Exception as err:
             print(err)
             continue
 
+        # Remove tag
+        paper['data']['tags'] = [tag for tag in paper['data']['tags']
+                                 if tag['tag'] != config['zot_send_tag']]
+        if config['zot_replace']:
+            paper['data']['tags'].append({'tag': config['zot_replace_tag']})
+        # Update item
+        zot.update_item(paper)
+        if verbose:
+            print("\tUpdated tags.")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Send papers from Zotero to ReMarkable tablet.")
