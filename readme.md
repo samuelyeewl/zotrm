@@ -24,18 +24,19 @@ Configuration
 -------------
 Place a `config.ini` file into `$USER/.zotrm/`.
 - Zotero settings
-	- `LIBRARY_ID`: Can be found [here](https://www.zotero.org/settings/keys),
-	  as the user ID for API calls.
-	- `API_KEY`: Can be obtained
-	  [here](https://www.zotero.org/settings/keys/new).
-	- `STORAGE_DIR`: Directory that Zotero uses for storing PDFs.
-	- `SEND_TAG`: Tag to monitor for PDFs to send. Removed from item if
-	  successfully sent or if file already existed.
-	- `REPLACE_TAG`: Optional, a tag to add to sent PDFs.
+    - `LIBRARY_ID`: Can be found [here](https://www.zotero.org/settings/keys),
+      as the user ID for API calls.
+    - `API_KEY`: Can be obtained
+      [here](https://www.zotero.org/settings/keys/new).
+    - `STORAGE_DIR`: Directory that Zotero uses for storing PDFs.
+    - `ATTACHMENT_DIR`: Directory used for linked attachment files.
+    - `SEND_TAG`: Tag to monitor for PDFs to send. Removed from item if
+      successfully sent or if file already existed.
+    - `REPLACE_TAG`: Optional, a tag to add to sent PDFs.
 - RMAPI settings
-	- `RMAPI_PATH`: Path to rmapi executable.
+    - `RMAPI_PATH`: Path to rmapi executable.
 - Remarkable settings
-	- `BASE_DIR`: If a file is in a collection (or subcollection), it will be
-	  placed in a folder(s) of the same name in this directory.
-	- `DEFAULT_DIR`: If a file has no collection, it will be placed in this
-	  directory.
+    - `BASE_DIR`: If a file is in a collection (or subcollection), it will be
+      placed in a folder(s) of the same name in this directory.
+    - `DEFAULT_DIR`: If a file has no collection, it will be placed in this
+      directory.
