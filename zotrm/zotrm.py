@@ -28,13 +28,15 @@ def read_config():
     d['zot_lib_id'] = config['Zotero']['LIBRARY_ID']
     d['zot_api_key'] = config['Zotero']['API_KEY']
     d['zot_storage_dir'] = os.path.expandvars(config['Zotero']['STORAGE_DIR'])
-    d['zot_attachment_dir'] = os.path.expandvars(config['Zotero']['ATTACHMENT_DIR'])
+    if 'ATTACHMENT_DIR' in config['Zotero']:
+        d['zot_attachment_dir'] = os.path.expandvars(config['Zotero']['ATTACHMENT_DIR'])
     d['zot_send_tag'] = config['Zotero']['SEND_TAG']
     d['zot_replace'] = 'REPLACE_TAG' in config['Zotero']
     if d['zot_replace']:
         d['zot_replace_tag'] = config['Zotero']['REPLACE_TAG']
     d['rmapi_path'] = os.path.expandvars(config['RMAPI']['RMAPI_PATH'])
-    d['rm_base_dir'] = config['Remarkable']['BASE_DIR']
+    if 'BASE_DIR' in config['Remarkable']:
+        d['rm_base_dir'] = config['Remarkable']['BASE_DIR']
     d['rm_default_dir'] = config['Remarkable']['DEFAULT_DIR']
 
     return d
@@ -145,6 +147,8 @@ def main(verbose=False):
                 coll = coll_info['data']['parentCollection']
                 coll_info = zot.collection(coll)
                 hierarchy.append(coll_info['data']['name'])
+            if 'rm_base_dir' in config and config['rm_base_dir'] != "/":
+                hierarchy.append(config['rm_base_dir'])
             hierarchy.reverse()
 
         if verbose:
@@ -213,3 +217,4 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     main(args.verbose)
+
