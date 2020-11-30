@@ -130,6 +130,11 @@ def main(verbose=False):
                         if os.path.exists(f):
                             attachments.append(f)
 
+        # If no attachments were found, skip the upload
+        if not attachments:
+            print("\tNo attachments found, skipping upload")
+            continue
+
         if verbose:
             for f in attachments:
                 print("\tFound PDF attachment {:s}".format(os.path.basename(f)))
