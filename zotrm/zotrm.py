@@ -90,7 +90,9 @@ def main(verbose=False):
         while queue:
             item = queue.pop()
             if item['data']['itemType'] != 'attachment':
-                queue += zot.children(item['key'])
+                # Note items don't have children to look through
+                if item['data']['itemType'] != 'note':
+                    queue += zot.children(item['key'])
                 continue
             # Get filename
             if 'filename' in item['data']:
