@@ -90,7 +90,8 @@ def main(verbose=False):
         while queue:
             item = queue.pop()
             if item['data']['itemType'] != 'attachment':
-                queue += zot.children(item['key'])
+                if item['data']['itemType'] != 'note':
+                    queue += zot.children(item['key'])
                 continue
             # Get filename
             if 'filename' in item['data']:
@@ -102,7 +103,8 @@ def main(verbose=False):
                 continue
 
             # Make sure file is a PDF
-            if '.pdf' not in filename.casefold():
+            #if '.pdf' not in filename.casefold():
+            if '.pdf' not in filename.lower():
                 continue
             # Join base file name
             if filename.startswith('attachments:'):
