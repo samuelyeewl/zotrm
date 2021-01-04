@@ -90,7 +90,9 @@ def main(verbose=False):
         while queue:
             item = queue.pop()
             if item['data']['itemType'] != 'attachment':
-                queue += zot.children(item['key'])
+                # Note items don't have children to look through
+                if item['data']['itemType'] != 'note':
+                    queue += zot.children(item['key'])
                 continue
             # Get filename
             if 'filename' in item['data']:
@@ -116,17 +118,24 @@ def main(verbose=False):
                     attachments.append(filename)
             else:
                 # Without linked attachments, PDF is in some subdirectory.
-                filename = os.path.join(config['zot_storage_dir'], '[A-Z0-9]*/' + filename)
-                r = re.compile(filename)
+                dirname = re.escape(config['zot_storage_dir'])
+                regexfilename = re.escape(filename)
+                regexfilename = os.path.join(dirname, '[A-Z0-9]*/' + regexfilename)
+                r = re.compile(regexfilename)
                 # Match files to list
                 foundfiles = list(filter(r.match, pdflist))
                 if len(foundfiles) < 1 :
-                    print("ERR: Cannot find file {:s}, skipping...".format(flename))
+                    print("ERR: Cannot find file \"{:s}\" in storage directory \"{:s}\", skipping...".format(filename,dirname))
                     continue
                 else:
                     for f in foundfiles:
                         if os.path.exists(f):
                             attachments.append(f)
+
+        # If no attachments were found, skip the upload
+        if not attachments:
+            print("\tNo attachments found, skipping upload")
+            continue
 
         if verbose:
             for f in attachments:
