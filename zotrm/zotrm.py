@@ -12,6 +12,7 @@ import re
 import argparse
 import subprocess
 from pyzotero import zotero
+import landscape_pdf
 
 def read_config():
     '''
@@ -60,7 +61,7 @@ def get_attachment(papers, zot, config):
     return attachments
 
 
-def main(verbose=False):
+def main(verbose=False, landscape=False):
     # Read configuration file
     config = read_config()
     rmapi_path = config['rmapi_path']
@@ -190,6 +191,16 @@ def main(verbose=False):
             # Upload PDF
             for attachment in attachments:
                 pdfname = os.path.basename(attachment)
+                if landscape:
+                    landscape_file = os.path.join('/tmp', pdfname.replace('.pdf', '_landscape.pdf'))
+                    if verbose:
+                        print("\tConverting file {:s} to landscape mode and saving at {:s}".format(attachment, landscape_file))
+                    landscape_pdf.convert_to_landscape(attachment, landscape_file)
+                    attachment = landscape_file
+                    pdfname = os.path.basename(attachment)
+                    if verbose:
+                        print("\tDone")
+
                 fileexists = not subprocess.call([rmapi_path, "find", dirstr + "/" +
                                                   os.path.splitext(pdfname)[0]],
                                                  stdout=subprocess.DEVNULL,
@@ -223,7 +234,8 @@ def main(verbose=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Send papers from Zotero to ReMarkable tablet.")
     parser.add_argument('--verbose', '-v', action='store_true')
+    parser.add_argument('--landscape', '-l', action='store_true')
     args = parser.parse_args()
 
-    main(args.verbose)
+    main(args.verbose, args.landscape)
 
