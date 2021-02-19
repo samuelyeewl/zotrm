@@ -9,6 +9,11 @@ latter is the use of collections as subdirectories and using the locally-stored
 PDFs instead of requiring the files be synced via Zotero Sync or a WebDAV
 server.
 
+NEW:
+----
+Initial integration with the [remarks](https://github.com/lucasrla/remarks)
+package for highlight extraction, available on the `remarks` branch.
+
 Usage
 -----
 Simply download the repository and run `python zotrm.py`.
