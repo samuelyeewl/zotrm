@@ -13,7 +13,7 @@ import argparse
 import subprocess
 from pyzotero import zotero
 import landscape_pdf
-import rmapi
+from rmapi import RMAPI
 import datetime
 import json
 import markdown
@@ -48,25 +48,6 @@ def read_config():
         d['remarks_path'] = config['remarks']['REMARKS_PATH']
 
     return d
-
-
-def get_attachment(papers, zot, config):
-    '''
-    Get the PDF attachment for the given paper.
-
-    Args:
-    -----
-    paper : list of dict
-        Item to get attachment for
-    zot : pyzotero.zotero.Zotero
-        Zotero library.
-
-    Returns:
-    --------
-    list of filenames
-    '''
-
-    return attachments
 
 
 def get_collection_hierarchy(paper, zot, config):
@@ -270,11 +251,11 @@ def extract_remarks(path, rmapi, config, outdir='./', metadata=None,
         shutil.rmtree(temp_dir)
     os.mkdir(temp_dir)
     if verbose:
-        print("Making directory {:s}".format(temp_dir))
+        print("\t\tMaking temp directory {:s}".format(temp_dir))
 
     # Unzip
     if verbose:
-        print("Unzipping results...")
+        print("\t\tUnzipping results...")
 
     res = subprocess.run(['unzip', outzip, '-d', temp_dir],
                          capture_output=True)
@@ -290,7 +271,7 @@ def extract_remarks(path, rmapi, config, outdir='./', metadata=None,
         "parent": ""
     }
     if verbose:
-        print("Creating metadata file...")
+        print("\t\tCreating metadata file...")
     with open(metadata_fn, 'w') as f:
         f.write(json.dumps(min_metadata))
 
@@ -302,33 +283,43 @@ def extract_remarks(path, rmapi, config, outdir='./', metadata=None,
     remarks_cmd = "cd {:s} && ".format(config['remarks_path'])
     remarks_cmd += "python -m remarks "
     remarks_cmd += "'{:s}' '{:s}' ".format(temp_dir, annotate_dir)
+    remarks_cmd += "-f "
     remarks_cmd += "--targets " + " ".join(targets) + " "
     if "md" in targets:
         remarks_cmd += "--combined_md "
     if "pdf" in targets:
         remarks_cmd += "--combined_pdf "
     if verbose:
-        print("Running remarks to extract annotations...: \n{:s}".format(remarks_cmd))
-    res = subprocess.run(remarks_cmd, shell=True, capture_output=True)
+        print("\t\tRunning remarks to extract annotations...: \n\t\t{:s}".format(remarks_cmd))
+    res = subprocess.run(remarks_cmd, shell=True, capture_output=True, text=True)
 
     if res.returncode != 0:
-        raise Exception("Could not run remarks, error {:s}".format(result.stderr))
+        raise Exception("Could not run remarks, error {:s}".format(res.stderr))
 
-    # Move files to output dir
+    if "No annotations found" in res.stdout:
+        print("\t\tNo annotations found.")
+        out_fns = []
+    else:
+        # Move files to output dir
+        if verbose:
+            print("\t\tMoving file to output directory...")
+        out_fns = []
+        remarks_basename = min_metadata['visibleName']
+        if "md" in targets:
+            md_fn = os.path.join(annotate_dir, remarks_basename + '.md')
+            out_md_fn = os.path.join(outdir, basename + '.md')
+            shutil.move(md_fn, out_md_fn)
+            out_fns.append(out_md_fn)
+        if "pdf" in targets:
+            pdf_fn = os.path.join(annotate_dir, remarks_basename + ' _remarks.pdf')
+            out_pdf_fn = os.path.join(outdir, basename + ' _remarks.pdf')
+            shutil.move(pdf_fn, out_pdf_fn)
+            out_fns.append(out_pdf_fn)
+
+    # Remove temporary directory
     if verbose:
-        print("Moving file to output directory...")
-    out_fns = []
-    remarks_basename = min_metadata['visibleName']
-    if "md" in targets:
-        md_fn = os.path.join(annotate_dir, remarks_basename + '.md')
-        out_md_fn = os.path.join(outdir, basename + '.md')
-        shutil.move(md_fn, out_md_fn)
-        out_fns.append(out_md_fn)
-    if "pdf" in targets:
-        pdf_fn = os.path.join(annotate_dir, remarks_basename + ' _remarks.pdf')
-        out_pdf_fn = os.path.join(outdir, basename + ' _remarks.pdf')
-        shutil.move(pdf_fn, out_pdf_fn)
-        out_fns.append(out_pdf_fn)
+        print("\t\tRemoving temp directory {:s}".format(temp_dir))
+    shutil.rmtree(temp_dir)
 
     return out_fns
 
@@ -340,9 +331,12 @@ def backsync_papers(zot, rmapi, config, verbose=False):
     # Get list of papers from Zotero that are on the remarkable
     z = zot.top(tag=config['zot_replace_tag'])
     if verbose:
-        print("Checking {:d} files on reMarkable".format(len(z)))
+        print("Checking {:d} files on reMarkable.".format(len(z)))
 
     for paper in z:
+        if verbose:
+            print("Preparing paper {:s}".format(paper['data']['title']))
+
         # Get list of attachments
         attachments = get_pdf_attachments(paper, zot, config, return_zot_dict=True)
         rm_hierarchy = get_collection_hierarchy(paper, zot, config)
@@ -354,70 +348,77 @@ def backsync_papers(zot, rmapi, config, verbose=False):
             rm_path = "/".join(rm_hierarchy) + "/" + basename
             on_rm = rmapi.checkfile(rm_path)
             if verbose and on_rm:
-                print("Found {:s} on reMarkable".format(rm_path))
+                print("\tFound {:s} on reMarkable".format(rm_path))
             elif not on_rm:
-                print("Could not find {:s} on reMarkable, skipping...".format(rm_path))
+                print("\tCould not find {:s} on reMarkable, skipping...".format(rm_path))
                 continue
 
             # Check last modification date on reMarkable
+            if verbose:
+                print("\tChecking modification date.")
             attachment_metadata = rmapi.stat(rm_path)
             last_modified_str = attachment_metadata['ModifiedClient']
             # The UTC+0 timezone is sometimes denoted as Z, but this is
             # not recognized by datetime:
             # https://discuss.python.org/t/parse-z-timezone-suffix-in-datetime/2220/14
-            last_modified_str = last_modified_str.replace('Z', '+00:00')
+            last_modified_str = last_modified_str.replace('Z', '')
+            # Zero-pad microseconds
+            frac_seconds = re.match('\d+-\d+-\d+T\d+:\d+:\d+.(\d+)',
+                                    attachment_metadata['ModifiedClient']).group(1)
+            if len(frac_seconds) < 6:
+                last_modified_str += ('0' * (6 - len(frac_seconds)))
+            last_modified_str += '+00:00'
             rm_last_modified = datetime.datetime.fromisoformat(last_modified_str)
 
             # Check to see if annotated file exists in zotero
             zot_remarks_attachment = attachment.replace('.pdf', ' _remarks.pdf')
-            if os.path.exists(zot_remarks_attachment):
-                # Check last modified date
-                remarks_last_modified = datetime.datetime.utcfromtimestamp(
-                    os.path.getmtime(zot_remarks_attachment))
+            zot_attachment = zot_remarks_attachment if os.path.exists(zot_remarks_attachment) \
+                else attachment
+            # Check last modified date
+            zot_last_modified = datetime.datetime.utcfromtimestamp(
+                os.path.getmtime(zot_attachment))
                 # Set UTC timezone for comparison
-                remarks_last_modified = remarks_last_modified.replace(
-                    tzinfo=datetime.timezone.utc)
-                # If file on computer is newer than on remarkable, skip this file.
-                if remarks_last_modified > rm_last_modified:
-                    if verbose:
-                        print("File on reMarkable is older than computer, skipping...")
-                    continue
+            zot_last_modified = zot_last_modified.replace(tzinfo=datetime.timezone.utc)
 
-            # If there is no current annotated file or the file on the computer
-            # is outdated, then we should get the annotated file.
+            # If file on computer is newer than on remarkable, skip this file.
+            if zot_last_modified > rm_last_modified:
+                if verbose:
+                    print("File on reMarkable not modified since last sync, skipping.")
+                continue
 
             # Use remarks to extract PDF and MD
+            if verbose:
+                print("\tExtracting remarks")
             annotated_files = extract_remarks(rm_path, rmapi, config,
                                               metadata=attachment_metadata,
                                               verbose=verbose, targets=['md', 'pdf'])
 
-            # Add extracted files to zotero notes
-            if verbose:
-                print("Adding extracted highlights to zotero...")
-            md_res = add_md_to_paper(paper, annotated_files[0], zot,
-                                     verbose=verbose)
-            pdf_res = add_pdf_to_paper(zot_attach, annotated_files[1], zot, config,
-                                       verbose=verbose)
-            return
+            if len(annotated_files) > 0:
+                # Add extracted files to zotero notes
+                if verbose:
+                    print("\tAdding extracted highlights to zotero...")
+                md_res = add_md_to_paper(paper, annotated_files[0], zot,
+                                         verbose=verbose)
+                pdf_res = add_pdf_to_paper(zot_attach, annotated_files[1], zot, config,
+                                           verbose=verbose)
+
+    return
 
 
-def main(verbose=False, landscape=False):
-    # Read configuration file
-    config = read_config()
-    rmapi_path = config['rmapi_path']
-    zot = zotero.Zotero(config['zot_lib_id'], 'user', config['zot_api_key'])
-
-    # Get list of papers with the appropriate tag
+def send_papers(zot, rmapi, config, verbose=False, landscape=False,
+                dry_run=False):
+    '''
+    Send papers to remarkable.
+    '''
     z = zot.top(tag=config['zot_send_tag'])
 
     if verbose:
-        print("Found {:d} papers to send...".format(len(z)))
+        print("Found {:d} papers to send.".format(len(z)))
 
     # Get list of files in Zotero storage dir
     pdflist = glob.glob(os.path.join(config['zot_storage_dir'], '*/*.pdf'))
     if pdflist == '':
         print("No PDF files found.")
-        return
 
     for paper in z:
         if verbose:
@@ -428,7 +429,8 @@ def main(verbose=False, landscape=False):
 
         # If no attachments were found, skip the upload
         if not attachments:
-            print("\tNo attachments found, skipping upload")
+            if verbose:
+                print("\tNo attachments found, skipping upload")
             continue
 
         if verbose:
@@ -437,98 +439,81 @@ def main(verbose=False, landscape=False):
 
         # Get collection(s)
         collections = paper['data']['collections']
-        if len(collections) < 1:
-            # If not in a collection, use default dir
-            hierarchy = [config['rm_default_dir']]
-        else:
-            hierarchy = []
-            coll = collections[0]
-            coll_info = zot.collection(coll)
-            hierarchy.append(coll_info['data']['name'])
-            # Get full hierarchy
-            while coll_info['data']['parentCollection']:
-                coll = coll_info['data']['parentCollection']
-                coll_info = zot.collection(coll)
-                hierarchy.append(coll_info['data']['name'])
-            if 'rm_base_dir' in config and config['rm_base_dir'] != "/":
-                hierarchy.append(config['rm_base_dir'])
-            hierarchy.reverse()
+        hierarchy = get_collection_hierarchy(paper, zot, config)
 
         if verbose:
             print("\tPlacing attachments in folder {:s}".format('/'.join(hierarchy)))
 
-        # Upload to remarkable
-        dirstr = ""
-        direxists = True
-        try:
-            # Create folders recursively
-            for folder in hierarchy:
-                dirstr += "/" + folder
-                if len(dirstr) < 2:
-                    break
-                # Check if directory exists if parent existed.
-                if direxists:
-                    direxists = not subprocess.call([rmapi_path, "find", dirstr],
-                                                    stdout=subprocess.DEVNULL,
-                                                    stderr=subprocess.DEVNULL)
-                # Create directory if it doesn't exist.
-                if not direxists:
-                    status = subprocess.call([rmapi_path, "mkdir", dirstr],
-                                             stdout=subprocess.DEVNULL)
-                    if status != 0:
-                        raise Exception("Could not create directory "
-                                        + dirstr + " on remarkable.")
-                    if verbose:
-                        print("\tCreated directory {:s} on remarkable".format(dirstr))
+        # Create target directory if it doesn't exist
+        dirstr = rmapi.mkdir(hierarchy)
 
-            # Upload PDF
-            for attachment in attachments:
-                pdfname = os.path.basename(attachment)
-                if landscape:
-                    landscape_file = os.path.join('/tmp', pdfname.replace('.pdf', '_landscape.pdf'))
-                    if verbose:
-                        print("\tConverting file {:s} to landscape mode and saving at {:s}".format(attachment, landscape_file))
-                    landscape_pdf.convert_to_landscape(attachment, landscape_file)
-                    attachment = landscape_file
-                    pdfname = os.path.basename(attachment)
-                    if verbose:
-                        print("\tDone")
-
-                fileexists = not subprocess.call([rmapi_path, "find", dirstr + "/" +
-                                                  os.path.splitext(pdfname)[0]],
-                                                 stdout=subprocess.DEVNULL,
-                                                 stderr=subprocess.DEVNULL)
-                if fileexists:
-                    if verbose:
-                        print("\tFile {:s} already exists, skipping...".format(pdfname))
-                    continue
-                status = subprocess.call([rmapi_path, "put", attachment, dirstr],
-                                         stdout=subprocess.DEVNULL)
-                if status != 0:
-                    raise Exception("\tCould not upload file " + pdfname +
-                                    " to remarkable.")
+        # Upload attachments
+        for attachment in attachments:
+            pdfname = os.path.basename(attachment)
+            if landscape:
+                landscape_file = os.path.join('/tmp', pdfname.replace('.pdf', '_landscape.pdf'))
                 if verbose:
-                    print("\tUploaded {:s}.".format(pdfname))
+                    print("\tConverting file {:s} to landscape mode and saving at {:s}".format(attachment, landscape_file))
+                landscape_pdf.convert_to_landscape(attachment, landscape_file)
+                attachment = landscape_file
+                pdfname = os.path.basename(attachment)
+                if verbose:
+                    print("\tDone converting to landscape.")
 
-        except Exception as err:
-            print(err)
-            continue
+            # Check if file already exists
+            rm_filename = dirstr + "/" + os.path.splitext(pdfname)[0]
+            fileexists = rmapi.checkfile(rm_filename)
+            if fileexists:
+                if verbose:
+                    print("\tFile {:s} already exists, skipping.".format(pdfname))
+            else:
+                # Upload file
+                if not dry_run:
+                    status = rmapi.put(attachment, dirstr)
+                    if verbose:
+                        print("\tUploaded {:s}.".format(pdfname))
 
-        # Remove tag
-        paper['data']['tags'] = [tag for tag in paper['data']['tags']
-                                 if tag['tag'] != config['zot_send_tag']]
-        if config['zot_replace']:
-            paper['data']['tags'].append({'tag': config['zot_replace_tag']})
-        # Update item
-        zot.update_item(paper)
-        if verbose:
-            print("\tUpdated tags.")
+            # Update tags in zotero
+            paper['data']['tags'] = [tag for tag in paper['data']['tags']
+                                     if tag['tag'] != config['zot_send_tag']]
+            if config['zot_replace']:
+                paper['data']['tags'].append({'tag': config['zot_replace_tag']})
+
+            zot.update_item(paper)
+            if verbose:
+                print("\tUpdated tags.")
+
+    return
+
+
+def main(verbose=False, landscape=False, dry_run=False):
+    # Read configuration file
+    config = read_config()
+    rmapi = RMAPI(config['rmapi_path'], verbose=verbose)
+    zot = zotero.Zotero(config['zot_lib_id'], 'user', config['zot_api_key'])
+
+    # Send papers
+    # -----------
+    if verbose:
+        print("Sending papers...")
+    #  send_papers(zot, rmapi, config, verbose=verbose, landscape=landscape,
+    #              dry_run=dry_run)
+
+    # Backsync papers
+    # ---------------
+    if verbose:
+        print("Syncing annotations...")
+    backsync_papers(zot, rmapi, config, verbose=verbose)
+
+
+    return
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Send papers from Zotero to ReMarkable tablet.")
     parser.add_argument('--verbose', '-v', action='store_true')
     parser.add_argument('--landscape', '-l', action='store_true')
+    parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
 
-    main(args.verbose, args.landscape)
+    main(args.verbose, args.landscape, args.dry_run)
 

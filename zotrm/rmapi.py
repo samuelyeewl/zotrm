@@ -86,8 +86,11 @@ class RMAPI(object):
                 if status != 0:
                     raise Exception("Could not create directory "
                                     + dirstr + " on remarkable.")
-                if verbose:
+                if self.verbose:
                     print("\tCreated directory {:s} on remarkable".format(dirstr))
+
+        if direxists and self.verbose:
+            print("\tDirectory {:s} already on remarkable".format(dirstr))
 
         return dirstr
 
@@ -134,4 +137,19 @@ class RMAPI(object):
         if dir is None:
             dir = os.getcwd()
         return os.path.join(dir, filename + '.zip')
+
+    def put(self, attachment, dir="/"):
+        '''
+        Run the put command, uploading a file to reMarkable.
+
+        Returns
+        -------
+        status code
+        '''
+        status = self("put", attachment, dir)
+        if status != 0:
+            raise Exception("Could not upload file " + attachment + " to remarkable.")
+
+        return status
+
 
