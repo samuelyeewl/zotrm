@@ -286,7 +286,7 @@ def extract_remarks(path, rmapi, config, outdir='./', metadata=None,
     remarks_cmd += "-f "
     remarks_cmd += "--targets " + " ".join(targets) + " "
     if "md" in targets:
-        remarks_cmd += "--combined_md "
+        remarks_cmd += "--combined_md --md_page_numbers "
     if "pdf" in targets:
         remarks_cmd += "--combined_pdf "
     if verbose:
@@ -324,7 +324,7 @@ def extract_remarks(path, rmapi, config, outdir='./', metadata=None,
     return out_fns
 
 
-def backsync_papers(zot, rmapi, config, verbose=False):
+def backsync_papers(zot, rmapi, config, verbose=False, dry_run=False):
     '''
     Backsync papers onto computer.
     '''
@@ -393,7 +393,7 @@ def backsync_papers(zot, rmapi, config, verbose=False):
                                               metadata=attachment_metadata,
                                               verbose=verbose, targets=['md', 'pdf'])
 
-            if len(annotated_files) > 0:
+            if len(annotated_files) > 0 and not dry_run:
                 # Add extracted files to zotero notes
                 if verbose:
                     print("\tAdding extracted highlights to zotero...")
@@ -503,7 +503,7 @@ def main(verbose=False, landscape=False, dry_run=False):
     # ---------------
     if verbose:
         print("Syncing annotations...")
-    backsync_papers(zot, rmapi, config, verbose=verbose)
+    backsync_papers(zot, rmapi, config, verbose=verbose, dry_run=dry_run)
 
 
     return
