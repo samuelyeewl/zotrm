@@ -162,19 +162,22 @@ def add_md_to_paper(paper, md_file, zot, verbose=False):
     '''
     # Read in file
     if verbose:
-        print("Reading in .md file...")
+        print("\t\tReading in .md file...")
     with open(md_file, 'r') as f:
         md_str = markdown.markdown(f.read())
+    # Remove default header
+    md_str = re.sub('<h1>.*</h1>\n', '', md_str)
+    # Add extracted highlights header
     md_str = '<p id="title"><strong>Extracted highlights</strong></p>\n' + md_str
 
     # Create note
     if verbose:
-        print("Creating note...")
+        print("\t\tCreating note...")
     note = zot.item_template('note')
     note['note'] = md_str
     note['parentItem'] = paper['key']
     if verbose:
-        print("Uploading note...")
+        print("\t\tUploading note...")
     res = zot.create_items([note])
 
     if '0' not in res['success']:
@@ -194,7 +197,7 @@ def add_pdf_to_paper(attachment, pdf_file, zot, config, verbose=False):
     elif link_mode == "linked_file":
         # For linked files, we create the item directly
         if verbose:
-            print("Creating new attachment...")
+            print("\t\tCreating new attachment...")
         new_attachment = zot.item_template('attachment', 'linked_file')
         new_attachment['title'] = os.path.basename(pdf_file)
         new_attachment['parentItem'] = attachment['data']['parentItem']
@@ -212,7 +215,7 @@ def add_pdf_to_paper(attachment, pdf_file, zot, config, verbose=False):
         # Move file to appropriate destination
         out_pdf_file = os.path.join(attachment_dir, basename.replace('.pdf', ' _remarks.pdf'))
         if verbose:
-            print("Moving pdf file to {:s}".format(out_pdf_file))
+            print("\t\tMoving pdf file to {:s}".format(out_pdf_file))
         shutil.move(pdf_file, out_pdf_file)
 
         # Add attachment path to metadata
@@ -220,7 +223,7 @@ def add_pdf_to_paper(attachment, pdf_file, zot, config, verbose=False):
 
         # Upload attachment
         if verbose:
-            print("Uploading attachment...")
+            print("\t\tUploading attachment...")
         res = zot.create_items([new_attachment], attachment['data']['parentItem'])
     else:
         raise Exception("Invalid linkMode {:s}".format(link_mode))
@@ -255,12 +258,17 @@ def extract_remarks(path, rmapi, config, outdir='./', metadata=None,
 
     # Unzip
     if verbose:
-        print("\t\tUnzipping results...")
+        print("\t\tUnzipping results.")
 
     res = subprocess.run(['unzip', outzip, '-d', temp_dir],
                          capture_output=True)
     if res.returncode != 0:
         raise Exception("Could not unzip file {:s}".format(outzip))
+
+    # Remove zip file
+    if verbose:
+        print("\t\tRemoving zip file.")
+    os.remove(outzip)
 
     # Remarks requires a metadata file
     metadata_fn = os.path.join(temp_dir, metadata['ID'] + '.metadata')
@@ -324,7 +332,8 @@ def extract_remarks(path, rmapi, config, outdir='./', metadata=None,
     return out_fns
 
 
-def backsync_papers(zot, rmapi, config, verbose=False, dry_run=False):
+def backsync_papers(zot, rmapi, config, verbose=False, dry_run=False,
+                    exclude=[]):
     '''
     Backsync papers onto computer.
     '''
@@ -333,7 +342,14 @@ def backsync_papers(zot, rmapi, config, verbose=False, dry_run=False):
     if verbose:
         print("Checking {:d} files on reMarkable.".format(len(z)))
 
+    exclude_keys = [p['key'] for p in exclude]
+
     for paper in z:
+        if paper['key'] in exclude_keys:
+            if verbose:
+                print("Skipping paper {:s}, just sent.".format(paper['data']['title']))
+            continue
+
         if verbose:
             print("Preparing paper {:s}".format(paper['data']['title']))
 
@@ -383,7 +399,7 @@ def backsync_papers(zot, rmapi, config, verbose=False, dry_run=False):
             # If file on computer is newer than on remarkable, skip this file.
             if zot_last_modified > rm_last_modified:
                 if verbose:
-                    print("File on reMarkable not modified since last sync, skipping.")
+                    print("\t\tFile on reMarkable not modified since last sync, skipping.")
                 continue
 
             # Use remarks to extract PDF and MD
@@ -399,9 +415,10 @@ def backsync_papers(zot, rmapi, config, verbose=False, dry_run=False):
                     print("\tAdding extracted highlights to zotero...")
                 md_res = add_md_to_paper(paper, annotated_files[0], zot,
                                          verbose=verbose)
+                # Remove md file
+                os.remove(annotate_files[0])
                 pdf_res = add_pdf_to_paper(zot_attach, annotated_files[1], zot, config,
                                            verbose=verbose)
-
     return
 
 
@@ -420,6 +437,7 @@ def send_papers(zot, rmapi, config, verbose=False, landscape=False,
     if pdflist == '':
         print("No PDF files found.")
 
+    sent_papers = []
     for paper in z:
         if verbose:
             print("Preparing paper {:s}".format(paper['data']['title']))
@@ -472,6 +490,7 @@ def send_papers(zot, rmapi, config, verbose=False, landscape=False,
                     status = rmapi.put(attachment, dirstr)
                     if verbose:
                         print("\tUploaded {:s}.".format(pdfname))
+                    sent_papers.append(paper)
 
             # Update tags in zotero
             paper['data']['tags'] = [tag for tag in paper['data']['tags']
@@ -483,7 +502,7 @@ def send_papers(zot, rmapi, config, verbose=False, landscape=False,
             if verbose:
                 print("\tUpdated tags.")
 
-    return
+    return sent_papers
 
 
 def main(verbose=False, landscape=False, dry_run=False):
@@ -496,14 +515,14 @@ def main(verbose=False, landscape=False, dry_run=False):
     # -----------
     if verbose:
         print("Sending papers...")
-    #  send_papers(zot, rmapi, config, verbose=verbose, landscape=landscape,
-    #              dry_run=dry_run)
+    sent_papers = send_papers(zot, rmapi, config, verbose=verbose, landscape=landscape,
+                              dry_run=dry_run)
 
     # Backsync papers
     # ---------------
     if verbose:
         print("Syncing annotations...")
-    backsync_papers(zot, rmapi, config, verbose=verbose, dry_run=dry_run)
+    backsync_papers(zot, rmapi, config, verbose=verbose, dry_run=dry_run, exclude=sent_papers)
 
 
     return
