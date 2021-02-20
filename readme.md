@@ -9,6 +9,24 @@ latter is the use of collections as subdirectories and using the locally-stored
 PDFs instead of requiring the files be synced via Zotero Sync or a WebDAV
 server.
 
+remarks branch
+--------------
+This branch is home to an experimental feature, using a fork of the package
+[remarks](https://github.com/lucasrla/remarks) to sync the annotated PDF and
+extract the highlights back as notes in Zotero.
+
+Features:
+- Checks papers in zotero marked with `REPLACE_TAG` for new annotations.
+- Generates a highlighted PDF and adds it as a new attachment in zotero.
+- Extracts highlights and adds them as a note attachment in zotero.
+
+Warning: there is no way to check whether a paper has been modified on the
+remarkable without syncing it, which is a slow process. I suggest removing the
+`REPLACE_TAG` for most papers in Zotero except the ones you want to keep synced.
+
+Please open a pull request if you find any bugs.
+
+
 Usage
 -----
 Simply download the repository and run `python zotrm.py`.
@@ -19,6 +37,8 @@ Requirements
   executable from the link, or compiled from source using `go` (recommended).
 - [pyzotero](https://github.com/urschrei/pyzotero). This can be installed using
   `pip` or `conda`.
+- The `zotrm` branch in my fork of [remarks](https://github.com/samuelyeewl/remarks)
+  annotations back to Zotero.
 
 Configuration
 -------------
@@ -40,3 +60,5 @@ Place a `config.ini` file into `$USER/.zotrm/`.
       placed in a folder(s) of the same name in this directory.
     - `DEFAULT_DIR`: If a file has no collection, it will be placed in this
       directory.
+- remarks settings
+    - `REMARKS_PATH`: Path to the `zotrm` branch of `remarks`.
