@@ -105,7 +105,7 @@ class RMAPI(object):
         if result.returncode != 0:
             raise Exception("Could not run stat, error: \n{:s}".format(result.stderr.decode('ascii')))
 
-        stat_res_str = result.stdout.split(b'\n')[1].decode('ascii')
+        stat_res_str = result.stdout.split(b'\n')[1].decode('utf-8')
 
         stat_regex = re.compile('[{|\s](\w+):(\S*)(?=[\s|}])')
         match = stat_regex.findall(stat_res_str)

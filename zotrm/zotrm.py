@@ -493,19 +493,21 @@ def send_papers(zot, rmapi, config, verbose=False, landscape=False,
                     sent_papers.append(paper)
 
             # Update tags in zotero
-            paper['data']['tags'] = [tag for tag in paper['data']['tags']
-                                     if tag['tag'] != config['zot_send_tag']]
-            if config['zot_replace']:
-                paper['data']['tags'].append({'tag': config['zot_replace_tag']})
+            if not dry_run:
+                paper['data']['tags'] = [tag for tag in paper['data']['tags']
+                                         if tag['tag'] != config['zot_send_tag']]
+                if config['zot_replace']:
+                    paper['data']['tags'].append({'tag': config['zot_replace_tag']})
 
-            zot.update_item(paper)
+                zot.update_item(paper)
+
             if verbose:
                 print("\tUpdated tags.")
 
     return sent_papers
 
 
-def main(verbose=False, landscape=False, dry_run=False):
+def main(verbose=False, landscape=False, dry_run=False, send=True, sync=True):
     # Read configuration file
     config = read_config()
     rmapi = RMAPI(config['rmapi_path'], verbose=verbose)
@@ -513,16 +515,18 @@ def main(verbose=False, landscape=False, dry_run=False):
 
     # Send papers
     # -----------
-    if verbose:
-        print("Sending papers...")
-    sent_papers = send_papers(zot, rmapi, config, verbose=verbose, landscape=landscape,
-                              dry_run=dry_run)
+    if send:
+        if verbose:
+            print("Sending papers...")
+        sent_papers = send_papers(zot, rmapi, config, verbose=verbose, landscape=landscape,
+                                  dry_run=dry_run)
 
     # Backsync papers
     # ---------------
-    if verbose:
-        print("Syncing annotations...")
-    backsync_papers(zot, rmapi, config, verbose=verbose, dry_run=dry_run, exclude=sent_papers)
+    if sync:
+        if verbose:
+            print("Syncing annotations...")
+        backsync_papers(zot, rmapi, config, verbose=verbose, dry_run=dry_run, exclude=sent_papers)
 
 
     return
@@ -532,7 +536,12 @@ if __name__ == '__main__':
     parser.add_argument('--verbose', '-v', action='store_true')
     parser.add_argument('--landscape', '-l', action='store_true')
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--send', action='store_true', help='Only send papers')
+    parser.add_argument('--sync', action='store_true', help='Only sync papers')
     args = parser.parse_args()
 
-    main(args.verbose, args.landscape, args.dry_run)
+    send = not args.sync
+    sync = not args.send
+
+    main(args.verbose, args.landscape, args.dry_run, send, sync)
 
