@@ -92,6 +92,8 @@ def get_pdf_attachments(paper, zot, config, return_zot_dict=False):
     # Recursively search for attachments
     queue = [paper]
     attachments = []
+    pdflist = None
+
     while queue:
         item = queue.pop()
         # Search for attachments
@@ -132,6 +134,9 @@ def get_pdf_attachments(paper, zot, config, return_zot_dict=False):
         else:
             # Without linked attachments, PDF is in some subdirectory.
             dirname = re.escape(config['zot_storage_dir'])
+            if pdflist is None:
+                pdflist = glob.glob(os.path.join(dirname, '*/*.pdf'))
+
             regexfilename = re.escape(filename)
             regexfilename = os.path.join(dirname, '[A-Z0-9]*/' + regexfilename)
             r = re.compile(regexfilename)
