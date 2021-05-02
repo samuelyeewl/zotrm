@@ -416,7 +416,7 @@ def backsync_papers(zot, rmapi, config, verbose=False, dry_run=False,
                 md_res = add_md_to_paper(paper, annotated_files[0], zot,
                                          verbose=verbose)
                 # Remove md file
-                os.remove(annotate_files[0])
+                os.remove(annotated_files[0])
                 pdf_res = add_pdf_to_paper(zot_attach, annotated_files[1], zot, config,
                                            verbose=verbose)
     return
